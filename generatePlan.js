@@ -289,25 +289,24 @@ function scheduleTask(task, username, bot, dayOfWeek) {
 
 
 function getCronTimeForAlmaty(almatyTime, dayOfWeekNumber) {
-
     const cleanedTime = almatyTime.replace(/^[^\w\s]/, '').trim();
-
     const [hours, minutes] = cleanedTime.split(':');
-    const almatyDate = moment.tz({ hours: parseInt(hours), minutes: parseInt(minutes) }, 'Asia/Almaty');
 
+    // Создаем дату в часовом поясе Asia/Almaty и переводим ее на 10 минут назад
+    const almatyDate = moment.tz({ hours: parseInt(hours), minutes: parseInt(minutes) }, 'Asia/Almaty');
     almatyDate.subtract(10, 'minutes');
 
-    const serverDate = almatyDate.clone().tz('UTC');
+    // Переводим полученное время в UTC
+    const utcDate = almatyDate.clone().tz('UTC');
 
-    const formattedHours = String(serverDate.hours()).padStart(2, '0');
-    const formattedMinutes = String(serverDate.minutes()).padStart(2, '0');
+    // Форматируем часы и минуты с ведущим нулем
+    const formattedHours = String(utcDate.hours());
+    const formattedMinutes = String(utcDate.minutes());
 
-    console.log(`Запуск задачи на ${formattedHours}:${formattedMinutes} по UTC`);
-    console.log(dayOfWeekNumber);
-    
-    
+    console.log(`Запуск задачи на ${formattedHours}:${formattedMinutes} по UTC (день недели: ${dayOfWeekNumber})`);
 
     return `${formattedMinutes} ${formattedHours} * * ${dayOfWeekNumber}`;
 }
+
 
 module.exports = { generatePlan, mongoConnect };
