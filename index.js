@@ -4,11 +4,11 @@ const bot = require('./bot');
 
 const app = express();
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 4000;
 app.listen(port, () => {
     bot.start();
 
-    // bot.sendMessageToAllUsers('Кто заблокирует бота, тот гей')
+    // bot.sendMessageToAllUsers('')
     
     console.log(`App is running on port ${port}`);
 });

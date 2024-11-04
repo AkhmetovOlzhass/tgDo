@@ -11,19 +11,51 @@ const openai = new OpenAI({
 
 const scheduledTasks = {};
 
+const daysOfWeekMap = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6
+};
+
 function mongoConnect(bot) {
-    mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+    mongoose.connect(process.env.MONGO_URI)
         .then(async () => {
             console.log('Connected to MongoDB');
 
-            // Загружаем всех пользователей из базы данных и пересоздаем их задачи
             const users = await UserTG.find();
 
             users.forEach(user => {
-                if (user.plans && user.plans.length > 0) {
-                    console.log(`Пересоздаем задачи для пользователя ${user.username}`);
-                    scheduledTasks[user.username] = user.plans.map(task => scheduleTask(task, user.username, bot));
+                console.log(`Пересоздаем задачи для пользователя ${user.username}`);
+            
+                const isNewStructure = user.plans && typeof user.plans === 'object' && 
+                                       'monday' in user.plans && 'tuesday' in user.plans;
+            
+                if (!isNewStructure) {
+                    console.log(`Пропускаем пользователя ${user.username} с устаревшей структурой plans`);
+                    return;
                 }
+            
+                Object.keys(user.plans).forEach(day => {
+                    const tasks = user.plans[day];
+                    
+                    if (tasks.length > 0) {
+                        scheduledTasks[user.username] = tasks
+                            .filter(task => task) // Фильтруем `undefined` задачи
+                            .map(task => {
+                                try {
+                                    return scheduleTask(task, user.username, bot, day);
+                                } catch (error) {
+                                    console.error(`Ошибка при создании задачи для пользователя ${user.username} на день ${day}:`, error);
+                                    return null; // Возвращаем `null` вместо `undefined` при ошибке
+                                }
+                            })
+                            .filter(task => task !== null); // Убираем `null` из массива задач
+                    }
+                });
             });
 
         })
@@ -32,83 +64,112 @@ function mongoConnect(bot) {
 
 
 
-async function generatePlan(newTaskText, username, bot) {
+async function generatePlan(newTaskText, username, bot, chatId) {
     let user = await UserTG.findOne({ username });
 
     if (!user) {
         // Если пользователя нет, регистрируем его
-        user = new UserTG({ username, plans: [] });
+        user = new UserTG({ username, plans: {
+            monday: [],
+        tuesday: [],
+        wednesday: [],
+        thursday: [],
+        friday: [],
+        saturday: [],
+        sunday: []
+        } });
         await user.save();
         console.log(`Новый пользователь зарегистрирован: ${username}`);
     } else {
         console.log(`Пользователь ${username} уже существует в базе данных`);
     }
-
-    // Формируем текст для OpenAI, комбинируя старые задачи с новыми
-    const existingTasksText = user.plans.map(task => `${task.time}: ${task.task} \n ${task.description} `).join('\n');
-    const combinedTasksText = `${existingTasksText}\n${newTaskText}`;
     
-    // Генерируем новый план через OpenAI, передавая все задачи
-    const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            "role": "system",
-            "content": `
-Ты — помощник, который помогает людям организовать их расписание. Твоя задача — принимать список дел и помогать пользователю составить полный план с указанием времени выполнения. Если пользователь указал конкретное время или дату для задачи, используй эти данные. Если время или дата не указаны, предложи логичный и удобный временной интервал для выполнения задачи, исходя из стандартного распорядка дня. Не используй символы форматирования, такие как ** или ##. Добавь мотивирующую фразу в начале и в конце расписания, чтобы подбодрить пользователя. Не придумывай от себя дополнительные занятия. НЕ ВЫДУМЫВАЙ НОВЫЕ ЗАДАНИЯ КОТОРЫЕ ПОЛЬЗОВАТЕЛЬ НЕ УПОМИНАЛ. Если задача была выполнена и пользователь это упомянул, замени крестик ❌ на галочку ✅ перед задачей. Если задача не была выполнена, оставь крестик ❌. Если начинается с одиночной цифры, записывай ее в формате не 7:00, а 07:00. Добавляй эмодзи чтобы выглядело приятнее. Не удаляй описание. Если пользователь просит удалить старое расписание ответь что расписание успешно удалено. Когда тебя просят показать расписание, не добавляй новых пунктов от себя.
+    const userTimezone = 'Asia/Almaty';
+    const userDate = moment.tz(userTimezone);
+    const dayOfWeekRu = userDate.locale('ru').format('dddd');
 
-Пример как должно выглядеть сообщение:
-
-Начнем продуктивный день!
-
-Вот как можно распланировать твое время для занятий уроками сегодня:
-
-❌ 08:00 - 10:00: Проснуться
-
-✅ 10:00 - 11:30: Первая сессия занятий
-Начни с самых сложных или важных материалов, пока твоя концентрация на максимуме.
-
-❌ 11:30 - 12:00: Перерыв
-Используй это время, чтобы отдохнуть, размяться или перекусить.
-
-❌ 12:00 - 13:30: Вторая сессия занятий
-Продолжай работу, сосредоточившись на оставшихся темах или заданиях.
-
-Ты отлично справишься, вперед к новым знаниям!
-            `
-          },
-          {
-            "role": "user",
-            "content": combinedTasksText
-          }
-        ]
-    });
-
-    const planText = response.choices[0].message.content;
-
-    // Извлекаем новые задачи из текста
-    const tasks = extractTasksFromPlan(planText);
-    
     try {
+        const responseDays = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                "role": "system",
+                "content": `
+                если пользователь говорит "сегодня", то это значит что он имеет ввиду ${dayOfWeekRu}. Если пользователь просит показать расписание на все дни, верни массив со всеми 7 днями недели.
+                    верни в формате JSON мне массив строк в котором перечисленны те дни недели которые ввел пользователь. возвращай дни недели на английском всегда. возвращай только сам объект. Пример: возвращенных данных: {"days": ['monday', 'tuesday', 'friday']}
+                `
+              },
+              {
+                "role": "user",
+                "content": newTaskText
+              }
+            ]
+        });
+        const days = JSON.parse(responseDays.choices[0].message.content).days;
+        console.log(days);
 
-        console.log(tasks);
-        
-        // Заменяем старые задачи на новый план
-        user.plans = tasks;
+        for (const el of days) {
+            const existingTasksText = user.plans[el].map(task => `${task.time}: ${task.task} \n ${task.description} `).join('\n');
+            const combinedTasksText = `${existingTasksText}\n ${newTaskText}`;
+            
+    
+            const response = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                  {
+                    "role": "system",
+                    "content": `
+                    Ты — помощник, который помогает людям организовать их расписание. Твоя задача — принимать список дел и помогать пользователю составить полный план с указанием времени выполнения. Если пользователь указал конкретное время или дату для задачи, используй эти данные. Если время или дата не указаны, предложи логичный и удобный временной интервал для выполнения задачи, исходя из стандартного распорядка дня. Не используй символы форматирования, такие как ** или ##. Добавь мотивирующую фразу в начале и в конце расписания, чтобы подбодрить пользователя. Не придумывай от себя дополнительные занятия. НЕ ВЫДУМЫВАЙ НОВЫЕ ЗАДАНИЯ КОТОРЫЕ ПОЛЬЗОВАТЕЛЬ НЕ УПОМИНАЛ. Если задача была выполнена и пользователь это упомянул, замени крестик ❌ на галочку ✅ перед задачей. Если задача не была выполнена, оставь крестик ❌. Если начинается с одиночной цифры, записывай ее в формате не 7:00, а 07:00. Добавляй эмодзи чтобы выглядело приятнее. Не удаляй описание. Пользователь говорит о ${el} день недели, значит по данным пользователя составь расписание только под этот день недели и не обращай внимания на слова пользователя сказанные для другого дня недели. В начале сообщения всегда напоминай о каком дне недели сейчас идет речь на русском. Если старое расписание пустое, пиши что-нибудь просящее написать расписание. учитывай что сейчас у пользователя ${dayOfWeekRu}, так что когда он говорит сегодня, учитывай что он про ${dayOfWeekRu}.  Только если пользователь просит удалить старое расписание ответь что расписание успешно удалено, во всех других случаях не удаляй расписание. Если расписание на ${el} дне недели пустое, тогда пиши что нет расписания на ${el}. больше ничего не добавляй, пример: Сегодня говорим о четверге. Нет расписания на четверг.
+                    
+                    Пример как должно выглядеть сообщение:
+                    
+                    Начнем продуктивный день!
+                    
+                    Вот как можно распланировать твое время для занятий уроками сегодня:
+                    
+                    ❌ 08:00 - 10:00: Проснуться
+                    
+                    ✅ 10:00 - 11:30: Первая сессия занятий
+                    Начни с самых сложных или важных материалов, пока твоя концентрация на максимуме.
+                    
+                    ❌ 11:30 - 12:00: Перерыв
+                    Используй это время, чтобы отдохнуть, размяться или перекусить.
+                    
+                    ❌ 12:00 - 13:30: Вторая сессия занятий
+                    Продолжай работу, сосредоточившись на оставшихся темах или заданиях.
+                    
+                    Ты отлично справишься, вперед к новым знаниям!
+                    `
+                  },
+                  {
+                    "role": "user",
+                    "content": combinedTasksText
+                  }
+                ]
+            });
+    
+            const planText = await response.choices[0].message.content;
+            const tasks = await extractTasksFromPlan(planText);
+            user.plans[el] = tasks;
+            await user.save();    
+    
+            console.log('Новый план успешно сохранен в базе данных');
 
-        // Сохраняем обновленного пользователя с новым планом
-        await user.save();    
-        console.log('Новый план успешно сохранен в базе данных');
+            scheduledTasks[username] = tasks.map(task => scheduleTask(task, username, bot, el));  
+
+            bot.sendMessage(chatId, planText);
+        }
+
 
         if (scheduledTasks[username]) {
             scheduledTasks[username].forEach(task => task.stop());
             console.log(`Удалены старые задачи для пользователя ${username}`);
         }
 
-        scheduledTasks[username] = tasks.map(task => scheduleTask(task, username, bot));    
-
-        // Возвращаем пользователю новый план
-        return planText;
+        for(const el of user.plans){
+            scheduledTasks[username] = el.map(task => scheduleTask(task, user.username, bot, el));
+        }
+        
 
     } catch (error) {
         console.error('Ошибка при сохранении плана:', error);
@@ -116,7 +177,7 @@ async function generatePlan(newTaskText, username, bot) {
     }
 }
 
-function extractTasksFromPlan(planText) {
+async function extractTasksFromPlan(planText) {
     console.log('Исходный текст плана:', planText);
 
     // Разбиваем текст на строки
@@ -157,7 +218,7 @@ function extractTasksFromPlan(planText) {
     return tasks;
 }
 
-function scheduleTask(task, username, bot) {
+function scheduleTask(task, username, bot, dayOfWeek) {
 
     const cleanedTime = task.time.replace(/^[^\w\s]/, '').trim();
     const [startTime] = cleanedTime.split('-').map(t => t.trim());
@@ -171,7 +232,13 @@ function scheduleTask(task, username, bot) {
         return;
     }
 
-    const newCron = getCronTimeForAlmaty(startTime);
+    const dayOfWeekNumber = daysOfWeekMap[dayOfWeek.toLowerCase()];
+    if (dayOfWeekNumber === undefined) {
+        console.error(`Некорректный день недели: ${dayOfWeek}`);
+        return;
+    }
+
+    const newCron = getCronTimeForAlmaty(startTime, dayOfWeekNumber);
 
     const scheduledTask = cron.schedule(newCron, async () => {
         console.log(`Напоминание для пользователя ${username}: Пора выполнить задачу "${task.task}"`);
@@ -221,7 +288,7 @@ function scheduleTask(task, username, bot) {
 
 
 
-function getCronTimeForAlmaty(almatyTime) {
+function getCronTimeForAlmaty(almatyTime, dayOfWeekNumber) {
 
     const cleanedTime = almatyTime.replace(/^[^\w\s]/, '').trim();
 
@@ -232,10 +299,15 @@ function getCronTimeForAlmaty(almatyTime) {
 
     const serverDate = almatyDate.clone().tz('UTC');
 
-    console.log(`Запуск задачи на ${serverDate.hours()}:${serverDate.minutes()} по UTC`);
+    const formattedHours = String(serverDate.hours()).padStart(2, '0');
+    const formattedMinutes = String(serverDate.minutes()).padStart(2, '0');
+
+    console.log(`Запуск задачи на ${formattedHours}:${formattedMinutes} по UTC`);
+    console.log(dayOfWeekNumber);
+    
     
 
-    return `${serverDate.minutes()} ${serverDate.hours()} * * *`;
+    return `${formattedMinutes} ${formattedHours} * * ${dayOfWeekNumber}`;
 }
 
 module.exports = { generatePlan, mongoConnect };

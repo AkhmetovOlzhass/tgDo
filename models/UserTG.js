@@ -9,7 +9,13 @@ const planSchema = new mongoose.Schema({
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true },
     chatId: {type: Number, required: true},
-    plans: [planSchema],
+    plans: {        monday: [planSchema],
+        tuesday: [planSchema],
+        wednesday: [planSchema],
+        thursday: [planSchema],
+        friday: [planSchema],
+        saturday: [planSchema],
+        sunday: [planSchema]},
     createdAt: { type: Date, default: Date.now }
 });
 

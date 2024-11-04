@@ -28,7 +28,15 @@ const start = () => {
         
         if (!user) {
             // Если пользователя нет, создаем нового с chatId
-            user = new UserTG({ username, chatId, plans: [] });
+            user = new UserTG({ username, chatId, plans: {
+                monday: [],
+            tuesday: [],
+            wednesday: [],
+            thursday: [],
+            friday: [],
+            saturday: [],
+            sunday: []
+            } });
             await user.save();
             console.log(`Новый пользователь зарегистрирован: ${username}`);
         } else {
@@ -59,9 +67,7 @@ const start = () => {
 
         bot.sendMessage(chatId, `Загрузка...`);
 
-        const plan = await generatePlan.generatePlan(text, username, bot)
-
-        bot.sendMessage(chatId, plan);
+        await generatePlan.generatePlan(text, username, bot, chatId)
     });
 };
 
