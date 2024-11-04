@@ -70,16 +70,18 @@ const start = () => {
         if(!user){
             bot.sendMessage(chatId, `Вы не зарегестрированны, введите команду /start`);
             return
-        }
-
+        } else{
         // Игнорируем голосовые сообщения и команду /start
-        if (msg.voice || text === '/start') {
-            return;
+            if (msg.voice || text === '/start') {
+                return;
+            }
+
+            bot.sendMessage(chatId, `Загрузка...`);
+
+            await generatePlan.generatePlan(text, username, bot, chatId)
         }
 
-        bot.sendMessage(chatId, `Загрузка...`);
 
-        await generatePlan.generatePlan(text, username, bot, chatId)
     });
 };
 
