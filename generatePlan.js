@@ -155,7 +155,9 @@ async function generatePlan(newTaskText, username, bot, chatId) {
     
             console.log('Новый план успешно сохранен в базе данных');
 
-            scheduledTasks[username].forEach(task => task.stop());
+            if(scheduledTasks[username]){
+                scheduledTasks[username].forEach(task => task.stop());
+            }
 
             console.log(scheduledTasks[username]);
             
