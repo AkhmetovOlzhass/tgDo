@@ -1,0 +1,23 @@
+{
+  "name": "tg-do",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "moment-timezone": "^0.5.46",
+    "mongoose": "^8.7.1",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.67.3"
+  }
+}
