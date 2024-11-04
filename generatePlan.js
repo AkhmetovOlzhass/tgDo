@@ -155,20 +155,19 @@ async function generatePlan(newTaskText, username, bot, chatId) {
     
             console.log('Новый план успешно сохранен в базе данных');
 
+            scheduledTasks[username].forEach(task => task.stop());
+
+            console.log(scheduledTasks[username]);
+            
+
             scheduledTasks[username] = tasks.map(task => scheduleTask(task, username, bot, el));  
 
             bot.sendMessage(chatId, planText);
         }
 
-
-        if (scheduledTasks[username]) {
-            scheduledTasks[username].forEach(task => task.stop());
-            console.log(`Удалены старые задачи для пользователя ${username}`);
-        }
-
-        for(const el of user.plans){
-            scheduledTasks[username] = el.map(task => scheduleTask(task, user.username, bot, el));
-        }
+        // for(const el of user.plans){
+        //     scheduledTasks[username] = el.map(task => scheduleTask(task, user.username, bot, el));
+        // }
         
 
     } catch (error) {
