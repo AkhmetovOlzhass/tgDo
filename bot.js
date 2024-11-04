@@ -12,7 +12,14 @@ generatePlan.mongoConnect(bot)
 
 const start = () => {
     // Обработка голосовых сообщений
-    bot.on('voice', (msg) => {
+    bot.on('voice', async (msg) => {
+        const username = msg.from.username;
+        let user = await UserTG.findOne({ username });
+        if(!user){
+            bot.sendMessage(chatId, `Вы не зарегестрированны, введите команду /start`);
+            return
+        }
+
         voiceHandler.handleVoiceMessage(bot, msg);
     });
 
@@ -59,6 +66,11 @@ const start = () => {
         const chatId = msg.chat.id;
         const username = msg.from.username;
         const text = msg.text;
+        let user = await UserTG.findOne({ username });
+        if(!user){
+            bot.sendMessage(chatId, `Вы не зарегестрированны, введите команду /start`);
+            return
+        }
 
         // Игнорируем голосовые сообщения и команду /start
         if (msg.voice || text === '/start') {
