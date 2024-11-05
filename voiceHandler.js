@@ -37,12 +37,7 @@ const handleVoiceMessage = async (bot, msg) => {
                 // Отправляем сообщение об успешной загрузке и тексте
                 await bot.sendMessage(chatId, 'Ваше голосовое сообщение: ' + audioText);
 
-                const plan = await generatePlan(audioText, username, bot, chatId);
-
-                console.log("Всё отлично!");
-                
-
-                await bot.sendMessage(chatId, plan);
+                await generatePlan(audioText, username, bot, chatId);
 
                 fs.unlink(fileName, (err) => {
                     if (err) {
